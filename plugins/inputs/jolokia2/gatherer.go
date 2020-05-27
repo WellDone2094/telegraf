@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"regexp"
+
 	"github.com/influxdata/telegraf"
 )
 
@@ -27,15 +27,10 @@ func NewGatherer(metrics []Metric) *Gatherer {
 func (g *Gatherer) Gather(client *Client, acc telegraf.Accumulator) error {
 	var tags map[string]string
 
-	r, _ := regexp.Compile("\\d+\\.\\d+\\.\\d+\\.\\d+")
-	client_ip := r.FindString(client.URL)
-
 	if client.config.ProxyConfig != nil {
 		tags = map[string]string{"jolokia_proxy_url": client.URL}
-		tags = map[string]string{"host_ip": client_ip}
 	} else {
 		tags = map[string]string{"jolokia_agent_url": client.URL}
-		tags = map[string]string{"host_ip": client_ip}
 	}
 
 	requests := makeReadRequests(g.metrics)
