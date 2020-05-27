@@ -74,7 +74,6 @@ func (g *Gatherer) gatherResponses(responses []ReadResponse, tags map[string]str
 
 			client_ip := r.FindString(point.Tags["jolokia_agent_url"])
 			point.Tags["host_ip"] = client_ip
-			fmt.Println(point.Tags)
 
 			acc.AddFields(measurement,
 				point.Fields, mergeTags(point.Tags, tags))
