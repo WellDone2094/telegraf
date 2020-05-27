@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
+	"regexp"
 	"github.com/influxdata/telegraf"
 )
 
@@ -67,8 +67,15 @@ func (g *Gatherer) gatherResponses(responses []ReadResponse, tags map[string]str
 		series[metric.Name] = points
 	}
 
+	r, _ := regexp.Compile("\\d+\\.\\d+\\.\\d+\\.\\d+")
+
 	for measurement, points := range series {
 		for _, point := range compactPoints(points) {
+
+			client_ip := r.FindString(point.Tags["jolokia_agent_url"])
+			point.Tags["host_ip"] = client_ip
+			fmt.Println(point.Tags)
+
 			acc.AddFields(measurement,
 				point.Fields, mergeTags(point.Tags, tags))
 		}
