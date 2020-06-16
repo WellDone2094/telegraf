@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"regexp"
 
 	"github.com/Shopify/sarama"
 	"github.com/influxdata/telegraf"
@@ -23,6 +24,12 @@ const sampleConfig = `
 
   ## Topics to consume.
   topics = ["telegraf"]
+
+  ## Topics regex.
+  topics_regex = ""
+
+  ## Refresh topic list time in minutes
+  topics_refresh_interval = 0s
 
   ## When set this tag will be added to all metrics with the topic as the value.
   # topic_tag = ""
@@ -92,19 +99,21 @@ type empty struct{}
 type semaphore chan empty
 
 type KafkaConsumer struct {
-	Brokers                []string `toml:"brokers"`
-	ClientID               string   `toml:"client_id"`
-	ConsumerGroup          string   `toml:"consumer_group"`
-	MaxMessageLen          int      `toml:"max_message_len"`
-	MaxUndeliveredMessages int      `toml:"max_undelivered_messages"`
-	Offset                 string   `toml:"offset"`
-	BalanceStrategy        string   `toml:"balance_strategy"`
-	Topics                 []string `toml:"topics"`
-	TopicTag               string   `toml:"topic_tag"`
-	Version                string   `toml:"version"`
-	SASLPassword           string   `toml:"sasl_password"`
-	SASLUsername           string   `toml:"sasl_username"`
-	SASLVersion            *int     `toml:"sasl_version"`
+	Brokers                []string       `toml:"brokers"`
+	ClientID               string         `toml:"client_id"`
+	ConsumerGroup          string         `toml:"consumer_group"`
+	MaxMessageLen          int            `toml:"max_message_len"`
+	MaxUndeliveredMessages int            `toml:"max_undelivered_messages"`
+	Offset                 string         `toml:"offset"`
+	BalanceStrategy        string         `toml:"balance_strategy"`
+	Topics                 []string       `toml:"topics"`
+	TopicsRegex            string         `toml:"topics_regex"`
+	TopicsRefreshInterval  internal.Duration  `toml:"topics_refresh_interval"`
+	TopicTag               string         `toml:"topic_tag"`
+	Version                string         `toml:"version"`
+	SASLPassword           string         `toml:"sasl_password"`
+	SASLUsername           string         `toml:"sasl_username"`
+	SASLVersion            *int           `toml:"sasl_version"`
 
 	EnableTLS *bool `toml:"enable_tls"`
 	tls.ClientConfig
@@ -113,11 +122,18 @@ type KafkaConsumer struct {
 
 	ConsumerCreator ConsumerGroupCreator `toml:"-"`
 	consumer        ConsumerGroup
+	topicListener   TopicsListener
 	config          *sarama.Config
 
 	parser parsers.Parser
 	wg     sync.WaitGroup
 	cancel context.CancelFunc
+	cancelConsume context.CancelFunc
+}
+
+
+type TopicsListener interface {
+	 Topics() ([]string, error)
 }
 
 type ConsumerGroup interface {
@@ -248,6 +264,12 @@ func (k *KafkaConsumer) Start(acc telegraf.Accumulator) error {
 		return err
 	}
 
+	// consumer to get list of topics
+	k.topicListener, err = sarama.NewConsumer(k.Brokers, k.config)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	k.cancel = cancel
 
@@ -256,10 +278,26 @@ func (k *KafkaConsumer) Start(acc telegraf.Accumulator) error {
 	go func() {
 		defer k.wg.Done()
 		for ctx.Err() == nil {
+			sub_ctx, cancelConsume := context.WithCancel(ctx)
+			k.cancelConsume = cancelConsume
 			handler := NewConsumerGroupHandler(acc, k.MaxUndeliveredMessages, k.parser)
 			handler.MaxMessageLen = k.MaxMessageLen
 			handler.TopicTag = k.TopicTag
-			err := k.consumer.Consume(ctx, k.Topics, handler)
+			topics := make([]string, 0)
+
+			if k.TopicsRegex == "" {
+				topics = k.Topics
+			} else {
+				allTopics, _ := k.topicListener.Topics()
+				r, _ := regexp.Compile(k.TopicsRegex)
+
+				for _, t := range allTopics {
+					if r.MatchString(t) {
+						topics = append(topics, t)
+					}
+				}
+			}
+			err := k.consumer.Consume(sub_ctx, topics, handler)
 			if err != nil {
 				acc.AddError(err)
 				internal.SleepContext(ctx, reconnectDelay)
@@ -270,6 +308,17 @@ func (k *KafkaConsumer) Start(acc telegraf.Accumulator) error {
 			acc.AddError(err)
 		}
 	}()
+
+	// Trigger topic list refresh
+	if k.TopicsRefreshInterval.Duration > 0 && k.TopicsRegex != "" {
+		go func() {
+			defer k.wg.Done()
+			for ctx.Err() == nil {
+				time.Sleep(k.TopicsRefreshInterval.Duration)
+				k.cancelConsume()
+			}
+		}()
+	}
 
 	k.wg.Add(1)
 	go func() {
