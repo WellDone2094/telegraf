@@ -92,6 +92,9 @@ type Config struct {
 	// Whether to continue if a JSON object can't be coerced
 	JSONStrict bool `toml:"json_strict"`
 
+	JSONDateFormat string `toml:"json_date_format"`
+	JSONDateFields []string `toml:"json_date_fields"`
+
 	// Authentication file for collectd
 	CollectdAuthFile string `toml:"collectd_auth_file"`
 	// One of none (default), sign, or encrypt
@@ -166,8 +169,10 @@ func NewParser(config *Config) (Parser, error) {
 				TimeKey:      config.JSONTimeKey,
 				TimeFormat:   config.JSONTimeFormat,
 				Timezone:     config.JSONTimezone,
+				DateFormat:   config.JSONDateFormat,
 				DefaultTags:  config.DefaultTags,
 				Strict:       config.JSONStrict,
+				DateFields:   config.JSONDateFields,
 			},
 		)
 	case "value":

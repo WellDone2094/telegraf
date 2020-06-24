@@ -26,9 +26,11 @@ type Config struct {
 	TagKeys      []string
 	NameKey      string
 	StringFields []string
+	DateFields []string
 	Query        string
 	TimeKey      string
 	TimeFormat   string
+	DateFormat   string
 	Timezone     string
 	DefaultTags  map[string]string
 	Strict       bool
@@ -42,13 +44,20 @@ type Parser struct {
 	query        string
 	timeKey      string
 	timeFormat   string
+	dateFormat   string
 	timezone     string
 	defaultTags  map[string]string
 	strict       bool
+	dateFields   filter.Filter
 }
 
 func New(config *Config) (*Parser, error) {
 	stringFilter, err := filter.Compile(config.StringFields)
+	if err != nil {
+		return nil, err
+	}
+
+	dateFilter, err := filter.Compile(config.DateFields)
 	if err != nil {
 		return nil, err
 	}
@@ -61,9 +70,11 @@ func New(config *Config) (*Parser, error) {
 		query:        config.Query,
 		timeKey:      config.TimeKey,
 		timeFormat:   config.TimeFormat,
+		dateFormat:   config.DateFormat,
 		timezone:     config.Timezone,
 		defaultTags:  config.DefaultTags,
 		strict:       config.Strict,
+		dateFields:   dateFilter,
 	}, nil
 }
 
@@ -170,10 +181,17 @@ func (p *Parser) switchFieldToTag(tags map[string]string, fields map[string]inte
 		}
 	}
 
-	//remove any additional string/bool values from fields
+	//remove any additional string/bool values from fields and convert dates
 	for fk := range fields {
 		switch fields[fk].(type) {
 		case string, bool:
+			if p.dateFields != nil && p.dateFields.Match(fk) {
+				t, err := time.Parse(p.dateFormat, fields[fk].(string))
+				if err != nil {
+					fmt.Println(err)
+				}
+				fields[fk] = t.UnixNano()
+			}
 			if p.stringFields != nil && p.stringFields.Match(fk) {
 				continue
 			}

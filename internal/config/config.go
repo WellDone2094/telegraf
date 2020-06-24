@@ -1526,6 +1526,26 @@ func getParserConfig(name string, tbl *ast.Table) (*parsers.Config, error) {
 		}
 	}
 
+	if node, ok := tbl.Fields["json_date_format"]; ok {
+		if kv, ok := node.(*ast.KeyValue); ok {
+			if str, ok := kv.Value.(*ast.String); ok {
+				c.JSONDateFormat = str.Value
+			}
+		}
+	}
+
+	if node, ok := tbl.Fields["json_date_fields"]; ok {
+		if kv, ok := node.(*ast.KeyValue); ok {
+			if ary, ok := kv.Value.(*ast.Array); ok {
+				for _, elem := range ary.Value {
+					if str, ok := elem.(*ast.String); ok {
+						c.JSONDateFields = append(c.JSONStringFields, str.Value)
+					}
+				}
+			}
+		}
+	}
+
 	if node, ok := tbl.Fields["data_type"]; ok {
 		if kv, ok := node.(*ast.KeyValue); ok {
 			if str, ok := kv.Value.(*ast.String); ok {
@@ -1823,6 +1843,8 @@ func getParserConfig(name string, tbl *ast.Table) (*parsers.Config, error) {
 	delete(tbl.Fields, "json_time_key")
 	delete(tbl.Fields, "json_timezone")
 	delete(tbl.Fields, "json_strict")
+	delete(tbl.Fields, "json_date_fields")
+	delete(tbl.Fields, "json_date_format")
 	delete(tbl.Fields, "data_type")
 	delete(tbl.Fields, "collectd_auth_file")
 	delete(tbl.Fields, "collectd_security_level")
