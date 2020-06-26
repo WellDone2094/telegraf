@@ -1539,7 +1539,7 @@ func getParserConfig(name string, tbl *ast.Table) (*parsers.Config, error) {
 			if ary, ok := kv.Value.(*ast.Array); ok {
 				for _, elem := range ary.Value {
 					if str, ok := elem.(*ast.String); ok {
-						c.JSONDateFields = append(c.JSONStringFields, str.Value)
+						c.JSONDateFields = append(c.JSONDateFields, str.Value)
 					}
 				}
 			}
